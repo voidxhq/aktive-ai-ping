@@ -7,6 +7,16 @@ on:
   workflow_dispatch: # Allows manual triggers
 
 jobs:
+  keepalive-job:
+    name: Keepalive Workflow
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gautamkrishnar/keepalive-workflow@v2
+
   ping:
     runs-on: ubuntu-latest
     steps:
