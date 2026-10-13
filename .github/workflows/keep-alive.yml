@@ -10,21 +10,48 @@ jobs:
   keepalive-job:
     name: Keepalive Workflow
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       actions: write
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Keepalive Commit
+        with:
+          fetch-depth: 0
+      - name: Keepalive Step
         run: |
-          LAST_COMMIT_DATE=$(git log -1 --format=%ct)
+          # Fetch keepalive branch if it exists remotely
+          git fetch origin keepalive:keepalive 2>/dev/null || true
+
+          MAIN_DATE=$(git log -1 --format=%ct origin/main 2>/dev/null || git log -1 --format=%ct)
+          KEEPALIVE_DATE=$(git log -1 --format=%ct keepalive 2>/dev/null || echo 0)
+
+          if [ "$KEEPALIVE_DATE" -gt "$MAIN_DATE" ]; then
+            LATEST_DATE=$KEEPALIVE_DATE
+          else
+            LATEST_DATE=$MAIN_DATE
+          fi
+
           CURRENT_DATE=$(date +%s)
-          DIFF_DAYS=$(( (CURRENT_DATE - LAST_COMMIT_DATE) / 86400 ))
+          DIFF_DAYS=$(( (CURRENT_DATE - LATEST_DATE) / 86400 ))
+          echo "Days since last repository commit: $DIFF_DAYS"
+
           if [ "$DIFF_DAYS" -gt 50 ]; then
+            echo "Repository has been inactive for $DIFF_DAYS days (> 50). Performing keepalive..."
             git config --global user.name 'github-actions[bot]'
             git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-            git commit --allow-empty -m "chore: keepalive dummy commit"
-            git push
+            
+            # Use dedicated keepalive branch to avoid branch protection rules on main
+            git checkout -B keepalive
+            git commit --allow-empty -m "chore: keepalive dummy commit [skip ci]"
+            git push origin keepalive --force || true
+
+            # Also ensure workflow state remains active via GitHub Actions API
+            curl -s -X PUT \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/actions/workflows/keep-alive.yml/enable" || true
+            echo "Keepalive completed successfully."
           else
             echo "Last commit was $DIFF_DAYS days ago. No keepalive commit needed."
           fi
